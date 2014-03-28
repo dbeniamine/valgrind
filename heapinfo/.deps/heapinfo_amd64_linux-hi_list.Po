@@ -1,0 +1,26 @@
+heapinfo_amd64_linux-hi_list.o: hi_list.c /usr/include/stdc-predef.h \
+ /usr/include/x86_64-linux-gnu/bits/predefs.h hi_list.h \
+ ../include/pub_tool_basics.h ../VEX/pub/libvex_basictypes.h \
+ /usr/lib/gcc/x86_64-linux-gnu/4.8/include/stdarg.h heapinfo.h \
+ ../include/valgrind.h ../include/pub_tool_mallocfree.h \
+ ../include/pub_tool_libcassert.h
+
+/usr/include/stdc-predef.h:
+
+/usr/include/x86_64-linux-gnu/bits/predefs.h:
+
+hi_list.h:
+
+../include/pub_tool_basics.h:
+
+../VEX/pub/libvex_basictypes.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/4.8/include/stdarg.h:
+
+heapinfo.h:
+
+../include/valgrind.h:
+
+../include/pub_tool_mallocfree.h:
+
+../include/pub_tool_libcassert.h:
