@@ -155,7 +155,6 @@ static void fwrite(int fd, char * buff)
 
 static void display(HI_Acces *a, int index)
 {
-    VG_(printf)("ploumploum\n");
     ULong ratio=(100*a->numAcc[READ]/(a->numAcc[READ]+a->numAcc[WRITE]));
     if(!clo_gnuplot_output){
         VG_(printf)("%llu\%% read : at : %lx fom time : %llu to : %llu concurrent acces : %s size : %llu \n",ratio, a->accesAt, a->time, a->time+mergeTimeThreshold, (a->concurrentAcc ? "True" : "False" ),a->size);
