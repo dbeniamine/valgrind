@@ -155,6 +155,7 @@ static void fwrite(int fd, char * buff)
 
 static void display(HI_Acces *a, int index)
 {
+    VG_(printf)("ploumploum\n");
     ULong ratio=(100*a->numAcc[READ]/(a->numAcc[READ]+a->numAcc[WRITE]));
     if(!clo_gnuplot_output){
         VG_(printf)("%llu\%% read : at : %lx fom time : %llu to : %llu concurrent acces : %s size : %llu \n",ratio, a->accesAt, a->time, a->time+mergeTimeThreshold, (a->concurrentAcc ? "True" : "False" ),a->size);
@@ -189,7 +190,7 @@ static void flush(void)
         if(nbFlush==0){
             for(i=0;i<array_size(allocTable);i++){
                 curb=(HI_Block*)elementAt(allocTable,i);
-                if(curb->ignored==False && curb->name!=NULL){
+                if(!curb->ignored && curb->name!=NULL){
                     VG_(snprintf)(BUFF,500, "set label \"%s\" at 0,%lu\n", curb->name, curb->start+curb->size/2);
                     fwrite(plotFileTemp, BUFF);
                 }
@@ -225,7 +226,10 @@ static void flush(void)
     for(i=0;i<array_size(allocTable);i++){
         curb=(HI_Block*)elementAt(allocTable,i);
         if(curb->ignored)
+        {
+            tl_assert(isEmpty(curb->acces));
             continue;
+        }
         if(!clo_gnuplot_output && showBlocksOnNextFlush ){
             //Normal block display
             VG_(printf)("Block : %s %lx size : %lu alloc by : %d sharedBlock : %s\n", (curb->name==NULL?"":curb->name),curb->start, curb->size, (int)curb->creatorId, curb->sharedBlock?"True":"False");
@@ -334,6 +338,8 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
         a->numAcc[(accesType+1)%2]=0;
         a->size=size;
         append(b->acces, (void *)a);
+        if(b->ignored)
+            showBlocksOnNextFlush=True;
         b->ignored=False; // We don't ignore the bloc anymore
         time++;
         numAcc++;
@@ -378,7 +384,8 @@ void* new_block ( ThreadId tid, void* p, SizeT req_szB, SizeT req_alignB,
     //Generate the meta data 
     if(addBlock(tid, (Addr)p, req_szB) ){
         //a block has been added so we have to show it on next flush
-        showBlocksOnNextFlush=True;
+        if(!clo_ignore_events)
+            showBlocksOnNextFlush=True;
         return p;
     }
     VG_(printf)("addBlock fail : %lu %p\n", req_szB, p);
@@ -394,12 +401,8 @@ void* new_block ( ThreadId tid, void* p, SizeT req_szB, SizeT req_alignB,
 static void deleteBlock(void *p)
 {
     HI_Block *b;
-    if(!b->ignored)
-    {
-        //We flush the data to keep the coherency 
-        //This is not required if the events are ignored
-        flush();
-    }
+    //We flush the data to keep the coherency 
+    flush();
     //then we find the block and delete it
     b=(HI_Block*)delElement(allocTable, p);
     if(b){
@@ -444,7 +447,8 @@ static void* renew_block ( ThreadId tid, void* p_old, SizeT new_req_szB )
     if(!addElement(allocTable,b)){
         VG_(tool_panic)("renew_block : error adding element");
     }
-    showBlocksOnNextFlush=True;
+    if(!b->ignored)
+        showBlocksOnNextFlush=True;
     VG_(cli_free)(p_old);
     return p_new;
 }
