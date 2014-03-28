@@ -1,0 +1,37 @@
+#ifndef __HEAPINFO_H
+#define __HEAPINFO_H
+
+#include "valgrind.h"
+typedef enum{
+    VG_USERREQ__NAME_STRUCT,
+    VG_USERREQ__IGNORE_STRUCT,
+    VG_USERREQ__RESIZE_STRUCT,
+    VG_USERREQ__START_HI_ANALYSE,
+    VG_USERREQ__STOP_HI_ANALYSE
+}VG_HeapInfoClientRequest;
+#endif
+
+#define MC_(str) VGAPPEND(vgHeapinfo_,str)
+
+#define VALGRIND_NAME_STRUCT(addr, name) \
+    VALGRIND_DO_CLIENT_REQUEST_EXPR(0,\
+            VG_USERREQ__NAME_STRUCT,\
+            (addr),(name),0,0,0)
+
+#define VALGRIND_IGNORE_STRUCT(addr) \
+    VALGRIND_DO_CLIENT_REQUEST_EXPR(0,\
+            VG_USERREQ__IGNORE_STRUCT,\
+            (addr),0,0,0,0)
+
+#define VALGRIND_RESIZE_STRUCT(addr, newSize) \
+    VALGRIND_DO_CLIENT_REQUEST_EXPR(0,\
+            VG_USERREQ__RESIZE_STRUCT,\
+            (addr),(newSize),0,0,0)
+
+
+#define VALGRIND_START_ANALYSE \
+    VALGRIND_DO_CLIENT_REQUEST_EXPR(0,VG_USERREQ__START_HI_ANALYSE,0,0,0,0,0)
+
+
+#define VALGRIND_STOP_ANALYSE \
+    VALGRIND_DO_CLIENT_REQUEST_EXPR(0, VG_USERREQ__STOP_HI_ANALYSE, 0,0,0,0,0)
