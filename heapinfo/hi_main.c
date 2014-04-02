@@ -181,6 +181,7 @@ static void display(HI_Acces *a, int index)
 static void flush(void)
 {
     int i=0;
+    Bool blockNotIgnored=False; //True if at least one unignored block have been flushed
     HI_Acces *curAcc=NULL;
     HI_Block *curb=NULL;
     //gnuplot specific output
@@ -190,22 +191,28 @@ static void flush(void)
             for(i=0;i<array_size(allocTable);i++){
                 curb=(HI_Block*)elementAt(allocTable,i);
                 if(!curb->ignored && curb->name!=NULL){
-                    VG_(snprintf)(BUFF,500, "set label \"%s\" at 0,%lu\n", curb->name, curb->start+curb->size/2);
+                    blockNotIgnored=True;
+                    VG_(snprintf)(BUFF,500, "set label \"%s\" at 0,%lu\n", 
+                            curb->name, curb->start+curb->size/2);
                     fwrite(plotFileTemp, BUFF);
                 }
             }
-            fwrite(plotFile, "plot ");
-        }else{
-            fwrite(plotFile, "replot ");
+            if(blockNotIgnored)
+            {
+                fwrite(plotFile, "plot ");
+            }
         }
         i=0;
         //Blocks lines
-        while(i<array_size(allocTable)){
+        for(i=0;i<array_size(allocTable);i++){
             curb=(HI_Block*)elementAt(allocTable,i);
             if(curb->ignored)
-            {
-                ++i;
                 continue;
+            if(nbFlush!=0 && !blockNotIgnored)
+            {
+                //first interesting block of this flush
+                fwrite(plotFile, "replot");
+                blockNotIgnored=True;
             }
             //begin line
             if(curb->sharedBlock){
@@ -218,7 +225,6 @@ static void flush(void)
             fwrite(plotFile, BUFF);
             VG_(snprintf)(BUFF,500, "%lu lt 1 lc rgb '%s' notitle %s ", curb->start+curb->size, curb->sharedBlock?"black":"yellow", ((i==array_size(allocTable)-1)?"\\\n":",")); 
             fwrite(plotFile, BUFF);
-            i++;
         }
         fwrite(plotFile, ";\n");
     }
@@ -233,6 +239,7 @@ static void flush(void)
             continue;
         }
         if(!clo_gnuplot_output && showBlocksOnNextFlush ){
+            blockNotIgnored=True;
             //Normal block display
             VG_(printf)("Block : %s %lx size : %lu alloc by : %d sharedBlock : %s\n", (curb->name==NULL?"":curb->name),curb->start, curb->size, (int)curb->creatorId, curb->sharedBlock?"True":"False");
         }
@@ -250,7 +257,8 @@ static void flush(void)
     lastFlush+=time;
     time=0;
     numAcc=0;
-    nbFlush++;
+    if(blockNotIgnored)
+        nbFlush++; // The flush is considered as effective only if there was at least one block printed
     showBlocksOnNextFlush=False;
 }
 
