@@ -203,7 +203,10 @@ static void flush(void)
         while(i<array_size(allocTable)){
             curb=(HI_Block*)elementAt(allocTable,i);
             if(curb->ignored)
+            {
+                ++i;
                 continue;
+            }
             //begin line
             if(curb->sharedBlock){
                 VG_(snprintf)(BUFF,500, "%lu lt 1 lc rgb 'black' %s, ", curb->start, (!bc ? "title 'concurrent data structure bounds'" : "notitle"));
