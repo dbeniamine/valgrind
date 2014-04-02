@@ -190,11 +190,14 @@ static void flush(void)
         if(nbFlush==0){
             for(i=0;i<array_size(allocTable);i++){
                 curb=(HI_Block*)elementAt(allocTable,i);
-                if(!curb->ignored && curb->name!=NULL){
+                if(!curb->ignored ){
                     blockNotIgnored=True;
-                    VG_(snprintf)(BUFF,500, "set label \"%s\" at 0,%lu\n", 
-                            curb->name, curb->start+curb->size/2);
-                    fwrite(plotFileTemp, BUFF);
+                    if(curb->name!=NULL)
+                    {
+                        VG_(snprintf)(BUFF,500, "set label \"%s\" at 0,%lu\n", 
+                                curb->name, curb->start+curb->size/2);
+                        fwrite(plotFileTemp, BUFF);
+                    }
                 }
             }
             if(blockNotIgnored)
@@ -208,7 +211,7 @@ static void flush(void)
             curb=(HI_Block*)elementAt(allocTable,i);
             if(curb->ignored)
                 continue;
-            if(nbFlush!=0 && !blockNotIgnored)
+            if(nbFlush!=0 && blockNotIgnored)
             {
                 //first interesting block of this flush
                 fwrite(plotFile, "replot");
