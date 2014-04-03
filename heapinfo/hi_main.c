@@ -42,28 +42,28 @@ static int  mergeTimeThreshold=0;
 static Bool clo_start_stop_marker = False;
 static Bool clo_ignore_events = False;
 
-//Is the output made for gnuplot ?
-static Bool clo_gnuplot_output = False;
-static Bool clo_gnuplot_output_file = False;
-static Bool clo_gnuplot_plot_file = False;
+//Is the output made for R ?
+static Bool clo_R_output = False;
+static Bool clo_R_output_file = False;
+static Bool clo_R_plot_file = False;
 
-//Data for gnuplot's output
+//Data for R's output
 
-//min and max for gnuplots graphics
+//min and max for Rs graphics
 static Addr minAddr=-1;
 Addr maxAddr=0;
 
 int currentIndex=1;
 
-//Boolean for gnuplots keys
+//Boolean for Rs keys
 static Bool bc=False;
 static Bool bnc=False;
 
-//gnuplots filesnames
+//Rs filesnames
 static Char *plotFileN;
 static Char *outputFileN;
 
-//gnuplot filesdescriptors
+//R filesdescriptors
 static  int plotFile;
 static  int plotFileTemp;
 
@@ -104,15 +104,15 @@ static Char BUFF[500], errBUFF[600];
 /* parsing  arguments*/
 static Bool hi_process_cmd_line_option(Char * arg)
 {
-    if VG_BOOL_CLO(arg, "--gnuplot-output", clo_gnuplot_output){}
+    if VG_BOOL_CLO(arg, "--R-output", clo_R_output){}
     else if VG_BOOL_CLO(arg, "--use-start-stop-markers", clo_start_stop_marker){
         clo_ignore_events=True;
     }
-    else if (VG_STR_CLO(arg, "--gnuplot-output-file", outputFileN)){
-        clo_gnuplot_output_file=True;
+    else if (VG_STR_CLO(arg, "--R-output-file", outputFileN)){
+        clo_R_output_file=True;
     }
-    else if (VG_STR_CLO(arg, "--gnuplot-plot-file", plotFileN)){
-        clo_gnuplot_plot_file=True;
+    else if (VG_STR_CLO(arg, "--R-plot-file", plotFileN)){
+        clo_R_plot_file=True;
     }else if(VG_STR_CLO(arg, "--merge-granularity", mergeGranularity)){
     }
     else if(VG_INT_CLO(arg, "--merge-time-threshold", mergeTimeThreshold)){}
@@ -126,10 +126,10 @@ static void hi_print_usage(void)
     VG_(printf)(
             "   --merge-time-threshold=N change the threshold for merging to acces [0]\n"
             "   --merge-granularity=<page|cache-line|none> [page]\n"
-            "   --gnuplot-output no|yes preformat output for gnuplot [no]\n"
-            "   --gnuplot-output-file=file change gnuplot's output file [hi_pid.ps]\n"
-            "   --gnuplot-plot-file=file change gnuplot's plot file [hi_pid.gnuplot]\n"
-            "   --gnuplot-data-file=file change gnuplot's data file [hi_pid.dat]\n"
+            "   --R-output no|yes preformat output for R [no]\n"
+            "   --R-output-file=file change R's output file [hi_pid.ps]\n"
+            "   --R-plot-file=file change R's plot file [hi_pid.R]\n"
+            "   --R-data-file=file change R's data file [hi_pid.dat]\n"
             "   --use-start-stop-markers analyse only the part of code between markers [no]\n"
             );
 }
@@ -156,7 +156,7 @@ static void fwrite(int fd, char * buff)
 static void display(HI_Acces *a, int index)
 {
     ULong ratio=(100*a->numAcc[READ]/(a->numAcc[READ]+a->numAcc[WRITE]));
-    if(!clo_gnuplot_output){
+    if(!clo_R_output){
         VG_(printf)("%llu\%% read : at : %lx fom time : %llu to : %llu concurrent acces : %s size : %llu \n",ratio, a->accesAt, a->time, a->time+mergeTimeThreshold, (a->concurrentAcc ? "True" : "False" ),a->size);
     }else{
         int r,g,b;
@@ -172,8 +172,8 @@ static void display(HI_Acces *a, int index)
             g=(int)(100-ratio)*255/100;
             b=(int)(255*ratio/100);
         }
-        //gnuplot instruction
-        VG_(snprintf)(BUFF, 500, "set object %d rect from %llu, %lu to %llu,%llu fc rgb '#%02x%02x%02x' fs noborder\n", index, a->time, a->accesAt, a->lastTime, a->accesAt+a->size, r,g,b);
+        //R instruction
+        VG_(snprintf)(BUFF, 500, "rect(%llu, %llu, %llu,%llu, col='#%02x%02x%02x')\n", a->time, a->accesAt, a->lastTime, a->accesAt+a->size, r,g,b);
         fwrite(plotFileTemp, BUFF);
     }
 
@@ -181,28 +181,26 @@ static void display(HI_Acces *a, int index)
 static void flush(void)
 {
     int i=0;
-    Bool blockNotIgnored=False; //True if at least one unignored block have been flushed
     HI_Acces *curAcc=NULL;
     HI_Block *curb=NULL;
-    //gnuplot specific output
-    if(clo_gnuplot_output && showBlocksOnNextFlush){
-        //gnuplot headers
+    //R specific output
+    if(clo_R_output && showBlocksOnNextFlush){
+        //R headers
         if(nbFlush==0){
             for(i=0;i<array_size(allocTable);i++){
                 curb=(HI_Block*)elementAt(allocTable,i);
                 if(!curb->ignored ){
-                    blockNotIgnored=True;
+                    if(i==0){
+                        VG_(snprintf)(BUFF,500, "legend(\"topright\",legend=c(\"shared data structure bounds\", \"private data structure bounds\"), col=c(\"black\", \"yellow\"))\n");
+                        fwrite(plotFileTemp, BUFF);
+                    }
                     if(curb->name!=NULL)
                     {
-                        VG_(snprintf)(BUFF,500, "set label \"%s\" at 0,%lu\n", 
+                        VG_(snprintf)(BUFF,500, "mtext(\"%s\",side=2, at=%lu)\n", 
                                 curb->name, curb->start+curb->size/2);
                         fwrite(plotFileTemp, BUFF);
                     }
                 }
-            }
-            if(blockNotIgnored)
-            {
-                fwrite(plotFile, "plot ");
             }
         }
         i=0;
@@ -211,27 +209,14 @@ static void flush(void)
             curb=(HI_Block*)elementAt(allocTable,i);
             if(curb->ignored)
                 continue;
-            if(nbFlush!=0 && blockNotIgnored)
-            {
-                //first interesting block of this flush
-                fwrite(plotFile, "replot");
-                blockNotIgnored=True;
-            }
             //begin line
-            if(curb->sharedBlock){
-                VG_(snprintf)(BUFF,500, "%lu lt 1 lc rgb 'black' %s, ", curb->start, (!bc ? "title 'concurrent data structure bounds'" : "notitle"));
-                bc=True; 
-            }else{
-                VG_(snprintf)(BUFF,500, "%lu lt 1 lc rgb 'yellow' %s, ", curb->start, (!bnc ? "title 'non concurrent data structure bounds'" : "notitle")); 
-                bnc=True;
-            }
-            fwrite(plotFile, BUFF);
-            VG_(snprintf)(BUFF,500, "%lu lt 1 lc rgb '%s' notitle %s ", curb->start+curb->size, curb->sharedBlock?"black":"yellow", ((i==array_size(allocTable)-1)?"\\\n":",")); 
-            fwrite(plotFile, BUFF);
+            VG_(snprintf)(BUFF,500, "abline(h=0x%lx,untf=FALSE,col='%s')\n", curb->start, curb->sharedBlock?"black":"yellow"); 
+            fwrite(plotFileTemp, BUFF);
+            VG_(snprintf)(BUFF,500, "abline(h=0x%lx,untf=FALSE,col='%s')\n", curb->start+curb->size, curb->sharedBlock?"black":"yellow"); 
+            fwrite(plotFileTemp, BUFF);
         }
-        fwrite(plotFile, ";\n");
     }
-    if(!clo_gnuplot_output && showBlocksOnNextFlush ){
+    if(!clo_R_output && showBlocksOnNextFlush ){
         VG_(printf)("Display block\n");
     }
     for(i=0;i<array_size(allocTable);i++){
@@ -241,8 +226,7 @@ static void flush(void)
             tl_assert(isEmpty(curb->acces));
             continue;
         }
-        if(!clo_gnuplot_output && showBlocksOnNextFlush ){
-            blockNotIgnored=True;
+        if(!clo_R_output && showBlocksOnNextFlush ){
             //Normal block display
             VG_(printf)("Block : %s %lx size : %lu alloc by : %d sharedBlock : %s\n", (curb->name==NULL?"":curb->name),curb->start, curb->size, (int)curb->creatorId, curb->sharedBlock?"True":"False");
         }
@@ -260,8 +244,7 @@ static void flush(void)
     lastFlush+=time;
     time=0;
     numAcc=0;
-    if(blockNotIgnored)
-        nbFlush++; // The flush is considered as effective only if there was at least one block printed
+    nbFlush++; // The flush is considered as effective only if there was at least one block printed
     showBlocksOnNextFlush=False;
 }
 
@@ -307,8 +290,8 @@ static int compBlock(void *e1, void*e2)
 static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int accesType)
 {
     accesAt&=MERGE_ADDR_MASK;
-    if(clo_gnuplot_output){
-        //for gnuplot graphics
+    if(clo_R_output){
+        //for R graphics
         if(minAddr==-1){
             minAddr=accesAt;
         }else{
@@ -326,6 +309,7 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
     }
     HI_Acces *last=(HI_Acces *)VG_(HT_lookup)(lastAcces, accesAt);
     if(last!=NULL){
+        tl_assert(last->time + mergeTimeThreshold >= time + lastFlush );
         last->concurrentAcc=(tid!=last->tid)|| last->concurrentAcc;
         last->numAcc[accesType]++;
         last->lastTime=time+lastFlush;
@@ -356,19 +340,23 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
         b->ignored=False; // We don't ignore the bloc anymore
         time++;
         numAcc++;
-        //add the access to the hash table and remove the oldest entry 
+        //add the access to the hash table 
         if(mergeTimeThreshold>0)
         {
-            last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
-            while(last!=NULL && last->time+mergeTimeThreshold<time+lastFlush){
-                void *old=VG_(HT_remove)(lastAcces,mergableAcc[oldestMergableAcc]);
-                tl_assert(old!=NULL);  
-                oldestMergableAcc=(oldestMergableAcc+1)%mergeTimeThreshold;
-                last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
-            }
+
             VG_(HT_add_node)(lastAcces, a);
             mergableAcc[nextMergableAcc]=accesAt;
             nextMergableAcc=(nextMergableAcc+1)%mergeTimeThreshold;
+        }
+    }
+    //remove old access which are not mergeable anymore
+    if(mergeTimeThreshold>0)
+    {
+        last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
+        while(last!=NULL && last->time+mergeTimeThreshold<time+lastFlush+1){
+            tl_assert(VG_(HT_remove)(lastAcces,mergableAcc[oldestMergableAcc])!=NULL);
+            oldestMergableAcc=(oldestMergableAcc+1)%mergeTimeThreshold;
+            last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
         }
     }
     if(numAcc==timeToFlush){
@@ -887,7 +875,7 @@ static void hi_post_clo_init(void)
         VG_(tool_panic)("alloc fail");
     }
     oldestMergableAcc=0;
-    if(!VG_(strcmp)(mergeGranularity, "none")){
+    if(!VG_(strcmp)(mergeGranularity, "none") || VG_(strtoull10)(mergeGranularity,NULL)==0){
         int i;
         for(i=0;i<8*sizeof(Addr);i++){
             MERGE_ADDR_MASK|=(~(Addr)0)<<i;
@@ -920,26 +908,26 @@ static void hi_post_clo_init(void)
             MERGE_ADDR_MASK|=(~((Addr)0)<<i); 
         }
     }
-    //openning gnuplot's file if necessary
-    if(clo_gnuplot_output){
-        if(!clo_gnuplot_plot_file){
+    //openning R's file if necessary
+    if(clo_R_output){
+        if(!clo_R_plot_file){
             if((plotFileN=VG_(malloc)("hi.post_clo_init.1", 20))==NULL){
                 VG_(tool_panic)("alloc fail");
             }
-            VG_(sprintf)(plotFileN, "hi_%d.gnuplot", (VG_(getpid)()));
+            VG_(sprintf)(plotFileN, "hi_%d.R", (VG_(getpid)()));
         }
-        if(!clo_gnuplot_output_file){
+        if(!clo_R_output_file){
             if((outputFileN=VG_(malloc)("hi.post_clo_init.1", 20))==NULL){
                 VG_(tool_panic)("alloc fail");
             }
             VG_(sprintf)(outputFileN, "hi_%d.ps", (VG_(getpid)()));
         }
         if((plotFile=VG_(fd_open)(plotFileN, VKI_O_RDWR | VKI_O_CREAT, (VKI_S_IRUSR | VKI_S_IWUSR)) )==-1){
-            VG_(tool_panic)("open gnuplot's plot file fail");
+            VG_(tool_panic)("open R's plot file fail");
         }
         VG_(snprintf)(BUFF,500,"%s_temp", plotFileN);
         if((plotFileTemp=VG_(fd_open)(BUFF, VKI_O_RDWR | VKI_O_CREAT, (VKI_S_IRUSR | VKI_S_IWUSR)) )==-1){
-            VG_(tool_panic)("open gnuplot's plot temp file fail");
+            VG_(tool_panic)("open R's plot temp file fail");
         }
     }
 }
@@ -953,7 +941,19 @@ static void copyFile(int src, int dest)
 static void hi_fini(Int exit_status)
 {
     flush();
-    if(clo_gnuplot_output){
+    if(clo_R_output){
+
+
+
+        VG_(snprintf)(BUFF,500,"x<-c(0,%llu)\n", time+lastFlush);
+        fwrite(plotFile, BUFF);
+        VG_(snprintf)(BUFF,500,"y<-c(0x%lx,0x%lx)\n", minAddr, maxAddr);
+        fwrite(plotFile, BUFF);
+        fwrite(plotFile,"plot(NULL,xlim=x,ylim=y,type=\"n\", xlab=\"instruction number\", ylab=\"memory address\", yaxt=\"n\")\n");
+        VG_(snprintf)(BUFF,500,"ymin<-0x%llx\nymax<-0x%llx\nyby=(ymax-ymin)/0x10\nypos<-seq(ymin,ymax,by=yby)\n", minAddr, maxAddr);
+        fwrite(plotFile, BUFF);
+        VG_(snprintf)(BUFF,500,"axis(2,at=ypos,labels=sprintf(\"0x\%x\",at=ypos))\n");
+        fwrite(plotFile, BUFF);
 
         //merge the two parts of the plot file
         VG_(lseek)(plotFileTemp,0,VKI_SEEK_SET);
@@ -962,20 +962,6 @@ static void hi_fini(Int exit_status)
         //remove the temporary file
         VG_(snprintf)(BUFF,500,"%s_temp", plotFileN);
         VG_(unlink)(BUFF);
-
-        fwrite(plotFile,  "set term postscript enhanced color\n");
-        VG_(snprintf)(BUFF,500, "set output '%s'\n", outputFileN);
-        fwrite(plotFile, BUFF);
-        fwrite(plotFile, "set format y \"%x\"\n");
-        fwrite(plotFile, "set xlabel 'instruction number'\n");
-        fwrite(plotFile, "set ylabel 'memory address'\n");
-        fwrite(plotFile, "set key below\n");
-        fwrite(plotFile, "set grid\n");
-        VG_(snprintf)(BUFF,500,"set xrange[0:%llu]\n", time+lastFlush);
-        fwrite(plotFile, BUFF);
-        fwrite(plotFile,"replot\n");
-
-
 
         VG_(close)(plotFile);
     }
