@@ -55,10 +55,6 @@ Addr maxAddr=0;
 
 int currentIndex=1;
 
-//Boolean for Rs keys
-static Bool bc=False;
-static Bool bnc=False;
-
 //Rs filesnames
 static Char *plotFileN;
 static Char *outputFileN;
@@ -173,7 +169,7 @@ static void display(HI_Acces *a, int index)
             b=(int)(255*ratio/100);
         }
         //R instruction
-        VG_(snprintf)(BUFF, 500, "rect(%llu, %llu, %llu,%llu, col='#%02x%02x%02x')\n", a->time, a->accesAt, a->lastTime, a->accesAt+a->size, r,g,b);
+        VG_(snprintf)(BUFF, 500, "rect(%llu, %lu, %llu,%llu, col='#%02x%02x%02x')\n", a->time, a->accesAt, a->lastTime, a->accesAt+a->size, r,g,b);
         fwrite(plotFileTemp, BUFF);
     }
 
@@ -181,6 +177,7 @@ static void display(HI_Acces *a, int index)
 static void flush(void)
 {
     int i=0;
+    Bool nolegend=True;
     HI_Acces *curAcc=NULL;
     HI_Block *curb=NULL;
     //R specific output
@@ -190,9 +187,10 @@ static void flush(void)
             for(i=0;i<array_size(allocTable);i++){
                 curb=(HI_Block*)elementAt(allocTable,i);
                 if(!curb->ignored ){
-                    if(i==0){
+                    if(nolegend){
                         VG_(snprintf)(BUFF,500, "legend(\"topright\",legend=c(\"shared data structure bounds\", \"private data structure bounds\"), col=c(\"black\", \"yellow\"))\n");
                         fwrite(plotFileTemp, BUFF);
+                        nolegend=False;
                     }
                     if(curb->name!=NULL)
                     {
@@ -244,7 +242,8 @@ static void flush(void)
     lastFlush+=time;
     time=0;
     numAcc=0;
-    nbFlush++; // The flush is considered as effective only if there was at least one block printed
+    if(!nolegend)
+        nbFlush++; // The flush is considered as effective only if there was at least one block printed
     showBlocksOnNextFlush=False;
 }
 
@@ -950,9 +949,9 @@ static void hi_fini(Int exit_status)
         VG_(snprintf)(BUFF,500,"y<-c(0x%lx,0x%lx)\n", minAddr, maxAddr);
         fwrite(plotFile, BUFF);
         fwrite(plotFile,"plot(NULL,xlim=x,ylim=y,type=\"n\", xlab=\"instruction number\", ylab=\"memory address\", yaxt=\"n\")\n");
-        VG_(snprintf)(BUFF,500,"ymin<-0x%llx\nymax<-0x%llx\nyby=(ymax-ymin)/0x10\nypos<-seq(ymin,ymax,by=yby)\n", minAddr, maxAddr);
+        VG_(snprintf)(BUFF,500,"ymin<-0x%lx\nymax<-0x%lx\nyby=(ymax-ymin)/0x10\nypos<-seq(ymin,ymax,by=yby)\n", minAddr, maxAddr);
         fwrite(plotFile, BUFF);
-        VG_(snprintf)(BUFF,500,"axis(2,at=ypos,labels=sprintf(\"0x\%x\",at=ypos))\n");
+        VG_(snprintf)(BUFF,500,"axis(2,at=ypos,labels=sprintf(\"0x%%x\",at=ypos))\n");
         fwrite(plotFile, BUFF);
 
         //merge the two parts of the plot file
