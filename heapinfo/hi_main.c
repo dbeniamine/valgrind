@@ -153,7 +153,7 @@ static void display(HI_Acces *a, int index)
 {
     ULong ratio=(100*a->numAcc[READ]/(a->numAcc[READ]+a->numAcc[WRITE]));
     if(!clo_R_output){
-        VG_(printf)("%llu\%% read : at : %lx fom time : %llu to : %llu concurrent acces : %s size : %llu \n",ratio, a->accesAt, a->time, a->time+mergeTimeThreshold, (a->concurrentAcc ? "True" : "False" ),a->size);
+        VG_(printf)("%llu\%% read : at : %lx fom time : %llu to : %llu concurrent acces : %s size : %llu \n",ratio, a->accesAt, a->time, a->lastTime, (a->concurrentAcc ? "True" : "False" ),a->size);
     }else{
         int r,g,b;
         //define the color gradient
@@ -312,11 +312,7 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
         last->concurrentAcc=(tid!=last->tid)|| last->concurrentAcc;
         last->numAcc[accesType]++;
         last->lastTime=time+lastFlush;
-        if(mergeSize==0){
-            last->size=MAX(size, last->size);
-        }else{
-            last->size=mergeSize;
-        }
+        last->size=MAX(size, last->size);
         time++;
     }else{
         //Allocation of meta data
@@ -352,7 +348,7 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
     if(mergeTimeThreshold>0)
     {
         last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
-        while(last!=NULL && last->time+mergeTimeThreshold<time+lastFlush+1){
+        while(last!=NULL && last->time+mergeTimeThreshold<time+lastFlush){
             tl_assert(VG_(HT_remove)(lastAcces,mergableAcc[oldestMergableAcc])!=NULL);
             oldestMergableAcc=(oldestMergableAcc+1)%mergeTimeThreshold;
             last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
@@ -897,6 +893,11 @@ static void hi_post_clo_init(void)
             }
         }else{
             mergeSize=VG_(strtoull10)(mergeGranularity,NULL);
+            //Work with a size 2^x
+            ULong mSize=1;
+            while(mSize<=mergeSize)
+                mSize=mSize<<1;
+            mergeSize=mSize;
         }
         //in the page (or cache line)
         int lsize=VG_(log2_64)(mergeSize);
