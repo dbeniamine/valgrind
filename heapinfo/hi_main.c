@@ -63,6 +63,7 @@ static Char *outputFileN;
 static  int plotFile;
 static  int plotFileTemp;
 
+typedef UWord Addr;
 //Informations about one acces
 typedef struct HI_ACC
 {
@@ -285,9 +286,27 @@ static int compBlock(void *e1, void*e2)
     return (int)(b1->start-b2->start);
 }
 
+static void removeOldAccess(void)
+{
+    if(mergeTimeThreshold>0)
+    {
+        HI_Acces *last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
+        while(last!=NULL && last->time+mergeTimeThreshold<time+lastFlush){
+            VG_(printf)("current time %lu, removed acces %lx at %lu, mergeTimeThreshold %lu\n", time, last->accesAt, last->time, mergeTimeThreshold);
+            tl_assert(VG_(HT_remove)(lastAcces,last->accesAt)!=NULL);
+            oldestMergableAcc=(oldestMergableAcc+1)%mergeTimeThreshold;
+            last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
+        }
+        if(last==NULL)
+        {
+            VG_(printf)("no more margeable access oldest %d, next %d, mergeTimeThreshold %d\n", oldestMergableAcc, nextMergableAcc, mergeTimeThreshold);
+        }
+    }
+}
 
 static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int accesType)
 {
+    tl_assert(!clo_ignore_events);
     accesAt&=MERGE_ADDR_MASK;
     if(clo_R_output){
         //for R graphics
@@ -312,8 +331,9 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
         last->concurrentAcc=(tid!=last->tid)|| last->concurrentAcc;
         last->numAcc[accesType]++;
         last->lastTime=time+lastFlush;
-        last->size=MAX(size, last->size);
+        last->size=mergeSize;
         time++;
+        removeOldAccess();
     }else{
         //Allocation of meta data
         HI_Acces *a=(HI_Acces *)VG_(malloc)("hi.addAccess", sizeof(struct HI_ACC));
@@ -335,25 +355,19 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
         b->ignored=False; // We don't ignore the bloc anymore
         time++;
         numAcc++;
+        removeOldAccess();
         //add the access to the hash table 
-        if(mergeTimeThreshold>0)
+        if(mergeTimeThreshold>0 && mergeSize > 0)
         {
-
+            VG_(printf)("Add acces \n");
             VG_(HT_add_node)(lastAcces, a);
-            mergableAcc[nextMergableAcc]=accesAt;
+            tl_assert(VG_(HT_lookup)(lastAcces, a->accesAt)!=NULL);
+            mergableAcc[nextMergableAcc]=a->accesAt;
             nextMergableAcc=(nextMergableAcc+1)%mergeTimeThreshold;
         }
     }
     //remove old access which are not mergeable anymore
-    if(mergeTimeThreshold>0)
-    {
-        last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
-        while(last!=NULL && last->time+mergeTimeThreshold<time+lastFlush){
-            tl_assert(VG_(HT_remove)(lastAcces,mergableAcc[oldestMergableAcc])!=NULL);
-            oldestMergableAcc=(oldestMergableAcc+1)%mergeTimeThreshold;
-            last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
-        }
-    }
+
     if(numAcc==timeToFlush){
         flush();
     }
@@ -521,8 +535,8 @@ static SizeT hi_malloc_usable_size ( ThreadId tid, void* p )
 
 static void hi_handle_write(Addr addr, SizeT size, ThreadId tid)
 {
-    //    if(!clo_ignore_events)
-    //        return;
+    if(clo_ignore_events)
+        return;
     HI_Block *b;
     if((b=(HI_Block*)lookup(allocTable,(void*)addr))){
         addAcces(b,addr,size,tid, WRITE);
@@ -531,8 +545,8 @@ static void hi_handle_write(Addr addr, SizeT size, ThreadId tid)
 
 static void hi_handle_read(Addr addr, SizeT size, ThreadId tid)
 {
-    //    if(!clo_ignore_events)
-    //        return;
+    if(clo_ignore_events)
+        return;
     HI_Block *b;
     if((b=(HI_Block*)lookup(allocTable,(void*)addr))){
         addAcces(b,addr,size,tid, READ);
