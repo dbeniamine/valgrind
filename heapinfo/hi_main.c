@@ -238,8 +238,8 @@ static void flush(void)
         }
     }
     //empty the hashtable
-    oldestMergableAcc=0;
-    nextMergableAcc=0;
+    //oldestMergableAcc=0;
+    //nextMergableAcc=0;
     lastFlush+=time;
     time=0;
     numAcc=0;
@@ -291,6 +291,7 @@ static void removeOldAccess(void)
     if(mergeTimeThreshold>0)
     {
         HI_Acces *last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
+        VG_(printf)("last acc  addr %lx\n", mergableAcc[oldestMergableAcc]);
         while(last!=NULL && last->time+mergeTimeThreshold<time+lastFlush){
             VG_(printf)("current time %lu, removed acces %lx at %lu, mergeTimeThreshold %lu\n", time, last->accesAt, last->time, mergeTimeThreshold);
             tl_assert(VG_(HT_remove)(lastAcces,last->accesAt)!=NULL);
@@ -858,8 +859,8 @@ IRSB* hi_instrument ( VgCallbackClosure* closure,
                                break;
             }
         }
-
         addStmtToIRSB( sbOut, st );
+
     }
 
     /*if (n > 0) {
