@@ -105,9 +105,6 @@ static Bool hi_process_cmd_line_option(Char * arg)
     else if VG_BOOL_CLO(arg, "--use-start-stop-markers", clo_start_stop_marker){
         clo_ignore_events=True;
     }
-    else if (VG_STR_CLO(arg, "--R-output-file", outputFileN)){
-        clo_R_output_file=True;
-    }
     else if (VG_STR_CLO(arg, "--R-plot-file", plotFileN)){
         clo_R_plot_file=True;
     }else if(VG_STR_CLO(arg, "--merge-granularity", mergeGranularity)){
@@ -124,9 +121,7 @@ static void hi_print_usage(void)
             "   --merge-time-threshold=N change the threshold for merging to acces [0]\n"
             "   --merge-granularity=<page|cache-line|none> [page]\n"
             "   --R-output no|yes preformat output for R [no]\n"
-            "   --R-output-file=file change R's output file [hi_pid.ps]\n"
             "   --R-plot-file=file change R's plot file [hi_pid.R]\n"
-            "   --R-data-file=file change R's data file [hi_pid.dat]\n"
             "   --use-start-stop-markers analyse only the part of code between markers [no]\n"
             );
 }
@@ -145,7 +140,8 @@ static void fwrite(int fd, char * buff)
     SizeT size=VG_(strlen)(buff), ws;
     //VG_(printf)("write %lu o\n", size);
     if((ws=VG_(write)(fd, buff, size))!=size){
-        VG_(snprintf)(errBUFF,600,"error while writing %s, only %lu bytes writed successful", BUFF, ws); 
+        VG_(snprintf)(errBUFF,600,"error while writing %s, only %lu bytes writed successful", 
+                BUFF, ws); 
         VG_(tool_panic)(errBUFF);
     }
 }
@@ -154,7 +150,10 @@ static void display(HI_Acces *a, int index)
 {
     ULong ratio=(100*a->numAcc[READ]/(a->numAcc[READ]+a->numAcc[WRITE]));
     if(!clo_R_output){
-        VG_(printf)("%llu\%% read : at : %lx fom time : %llu to : %llu concurrent acces : %s size : %llu \n",ratio, a->accesAt, a->time, a->lastTime, (a->concurrentAcc ? "True" : "False" ),a->size);
+        //Access adress size start end type value concurrent
+        VG_(printf)("Access %lx %lu %lu %lu %s %llu %s\n", a->accesAt, a->size, 
+                a->time, a->lastTime, (ratio==0?"W":ratio==100?"R":"RW"), 
+                ratio,(a->concurrentAcc ? "True" : "False" ) );
     }else{
         int r,g,b;
         //define the color gradient
@@ -191,7 +190,8 @@ static void flush(void)
                 curb=(HI_Block*)elementAt(allocTable,i);
                 if(!curb->ignored ){
                     if(nolegend){
-                        VG_(snprintf)(BUFF,500, "legend(\"topright\",legend=c(\"shared data structure bounds\", \"private data structure bounds\"), col=c(\"black\", \"yellow\"))\n");
+                        VG_(snprintf)(BUFF,500, 
+                                "legend(\"topright\",legend=c(\"shared data structure bounds\", \"private data structure bounds\"), col=c(\"black\", \"yellow\"))\n");
                         fwrite(plotFileTemp, BUFF);
                         nolegend=False;
                     }
@@ -211,14 +211,16 @@ static void flush(void)
             if(curb->ignored)
                 continue;
             //begin line
-            VG_(snprintf)(BUFF,500, "abline(h=0x%lx,untf=FALSE,col='%s')\n", curb->start, curb->sharedBlock?"black":"yellow"); 
+            VG_(snprintf)(BUFF,500, "abline(h=0x%lx,untf=FALSE,col='%s')\n", 
+                    curb->start, curb->sharedBlock?"black":"yellow"); 
             fwrite(plotFileTemp, BUFF);
-            VG_(snprintf)(BUFF,500, "abline(h=0x%lx,untf=FALSE,col='%s')\n", curb->start+curb->size, curb->sharedBlock?"black":"yellow"); 
+            VG_(snprintf)(BUFF,500, "abline(h=0x%lx,untf=FALSE,col='%s')\n", 
+                    curb->start+curb->size, curb->sharedBlock?"black":"yellow"); 
             fwrite(plotFileTemp, BUFF);
         }
     }
     if(!clo_R_output && showBlocksOnNextFlush ){
-        VG_(printf)("Display block\n");
+        VG_(printf)("ZoneSize %lu\n", mergeSize);
     }
     for(i=0;i<array_size(allocTable);i++){
         curb=(HI_Block*)elementAt(allocTable,i);
@@ -229,7 +231,10 @@ static void flush(void)
         }
         if(!clo_R_output && showBlocksOnNextFlush ){
             //Normal block display
-            VG_(printf)("Block : %s %lx size : %lu alloc by : %d sharedBlock : %s\n", (curb->name==NULL?"":curb->name),curb->start, curb->size, (int)curb->creatorId, curb->sharedBlock?"True":"False");
+            //Struct name adress size shared
+            VG_(printf)("Struct %s %lx %lu %s\n", 
+                    (curb->name==NULL?"Unnamed":curb->name),curb->start, 
+                    curb->size,  curb->sharedBlock?"True":"False");
         }
         while(!isEmpty(curb->acces)){
             curAcc=(HI_Acces *)removeFirst(curb->acces);
