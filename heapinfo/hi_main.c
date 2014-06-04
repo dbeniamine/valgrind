@@ -170,7 +170,9 @@ static void display(HI_Acces *a, int index)
             b=(int)(255*ratio/100);
         }
         //R instruction
-        VG_(snprintf)(BUFF, 500, "rect(%llu, %lu, %llu,%llu, col='#%02x%02x%02x')\n", a->time, a->accesAt, a->lastTime, a->accesAt+a->size, r,g,b);
+        VG_(snprintf)(BUFF, 500, 
+        "rect(%llu, %lu, %llu,%llu, col='#%02x%02x%02x', border='#%02x%02x%02x')\n", 
+        a->time, a->accesAt, a->lastTime, a->accesAt+a->size, r,g,b,r,g,b);
         fwrite(plotFileTemp, BUFF);
     }
 
