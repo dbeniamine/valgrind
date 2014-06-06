@@ -73,8 +73,7 @@ typedef struct HI_ACC
     ULong size;
     ULong time;
     ULong lastTime;
-    Bool concurrentAcc;
-    ThreadId tid;
+    ThreadId tid_mask;
     ULong numAcc[2];
 }HI_Acces;
 
@@ -83,8 +82,7 @@ typedef struct HI_BLK
 {
     Addr start;
     SizeT size;
-    ThreadId creatorId;
-    Bool sharedBlock;
+    ThreadId tid_mask;
     Bool ignored;
     list acces;
     char* name;
@@ -145,19 +143,71 @@ static void fwrite(int fd, char * buff)
         VG_(tool_panic)(errBUFF);
     }
 }
+void print_binary_reprensentation(unsigned int mask, char buffer[])
+{
+    buffer[0]='0';
+    buffer[1]='b';
+    unsigned int size=8*sizeof(unsigned int)-1, max=1<<size, cur=1;
+    unsigned int first=2, last=size+first, pos=last;
+    //Write binary representation
+    while(pos>=first)
+    {
+        if((cur&mask)==cur)
+        {
+            buffer[pos]='1';
+        }
+        else
+        {
+            buffer[pos]='0';
+        }
+        cur=cur<<1;
+        pos--;
+    }
+    //find the first 1
+    pos=first;
+    while(buffer[pos]=='0' && pos <= last)
+    {
+        pos++;
+    }
+    //remove trailing 0
+    int i=first;
+    while(pos<=last)
+    {
+        buffer[i]=buffer[pos];
+        i++;
+        pos++;
+    }
+    buffer[i]='\0';
+}
+
+int shared(unsigned int mask)
+{
+    unsigned int size=8*sizeof(unsigned int);
+    unsigned int nbAccessors=0, cur=1, i=0;
+    while(i<size && nbAccessors< 2)
+    {
+        if((cur&mask)==cur)
+            nbAccessors++;
+        cur=cur<<1;
+        i++;
+    }
+    return nbAccessors > 1;
+}
 
 static void display(HI_Acces *a, int index)
 {
     ULong ratio=(100*a->numAcc[READ]/(a->numAcc[READ]+a->numAcc[WRITE]));
     if(!clo_R_output){
-        //Access adress size start end type value concurrent
-        VG_(printf)("Access %lx %lu %lu %lu %s %llu %s\n", a->accesAt, a->size, 
+        //Access adress size start end type value
+        char buffer[35];
+        print_binary_reprensentation(a->tid_mask, buffer);
+        VG_(printf)("Access %lx %llu %llu %llu %s %llu %s\n", a->accesAt, a->size, 
                 a->time, a->lastTime, (ratio==0?"W":ratio==100?"R":"RW"), 
-                ratio,(a->concurrentAcc ? "True" : "False" ) );
+                ratio,buffer);
     }else{
         int r,g,b;
         //define the color gradient
-        if(a->concurrentAcc){
+        if(shared(a->tid_mask)){
             //purple concurent read / orange write
             r=255;
             g=(int)(100-ratio)*200/100;
@@ -170,8 +220,8 @@ static void display(HI_Acces *a, int index)
         }
         //R instruction
         VG_(snprintf)(BUFF, 500, 
-        "rect(%llu, %lu, %llu,%llu, col='#%02x%02x%02x', border='#%02x%02x%02x')\n", 
-        a->time, a->accesAt, a->lastTime, a->accesAt+a->size, r,g,b,r,g,b);
+                "rect(%llu, %lu, %llu,%llu, col='#%02x%02x%02x', border='#%02x%02x%02x')\n", 
+                a->time, a->accesAt, a->lastTime, a->accesAt+a->size, r,g,b,r,g,b);
         fwrite(plotFileTemp, BUFF);
     }
 
@@ -212,15 +262,16 @@ static void flush(void)
                 continue;
             //begin line
             VG_(snprintf)(BUFF,500, "abline(h=0x%lx,untf=FALSE,col='%s')\n", 
-                    curb->start, curb->sharedBlock?"black":"yellow"); 
+                    curb->start, shared(curb->tid_mask)?"black":"yellow"); 
             fwrite(plotFileTemp, BUFF);
             VG_(snprintf)(BUFF,500, "abline(h=0x%lx,untf=FALSE,col='%s')\n", 
-                    curb->start+curb->size, curb->sharedBlock?"black":"yellow"); 
+                    curb->start+curb->size, 
+                    shared(curb->tid_mask)?"black":"yellow"); 
             fwrite(plotFileTemp, BUFF);
         }
     }
     if(!clo_R_output && showBlocksOnNextFlush ){
-        VG_(printf)("ZoneSize %lu\n", mergeSize);
+        VG_(printf)("ZoneSize %llu\n", mergeSize);
     }
     for(i=0;i<array_size(allocTable);i++){
         curb=(HI_Block*)elementAt(allocTable,i);
@@ -230,11 +281,13 @@ static void flush(void)
             continue;
         }
         if(!clo_R_output && showBlocksOnNextFlush ){
+            char buffer[35];
+            print_binary_reprensentation(curb->tid_mask, buffer);
             //Normal block display
-            //Struct name adress size shared
+            //Struct name adress size users
             VG_(printf)("Struct %s %lx %lu %s\n", 
                     (curb->name==NULL?"Unnamed":curb->name),curb->start, 
-                    curb->size,  curb->sharedBlock?"True":"False");
+                    curb->size,  buffer);
         }
         while(!isEmpty(curb->acces)){
             curAcc=(HI_Acces *)removeFirst(curb->acces);
@@ -260,8 +313,7 @@ static Bool addBlock(ThreadId tid, Addr start, SizeT size)
     HI_Block *temp=VG_(malloc)("hi.addBlock.1",sizeof(struct HI_BLK));
     temp->start=start;
     temp->size=size;
-    temp->creatorId=tid;
-    temp->sharedBlock=False;
+    temp->tid_mask=1<<tid;
     temp->name=NULL;
     temp->acces=newList();
     temp->ignored=clo_ignore_events;
@@ -300,7 +352,7 @@ static void removeOldAccess(void)
         HI_Acces *last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
         VG_(printf)("last acc  addr %lx\n", mergableAcc[oldestMergableAcc]);
         while(last!=NULL && last->time+mergeTimeThreshold<time+lastFlush){
-            VG_(printf)("current time %lu, removed acces %lx at %lu, mergeTimeThreshold %lu\n", time, last->accesAt, last->time, mergeTimeThreshold);
+            VG_(printf)("current time %llu, removed acces %lx at %llu, mergeTimeThreshold %d\n", time, last->accesAt, last->time, mergeTimeThreshold);
             tl_assert(VG_(HT_remove)(lastAcces,last->accesAt)!=NULL);
             oldestMergableAcc=(oldestMergableAcc+1)%mergeTimeThreshold;
             last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
@@ -325,18 +377,12 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
         }
         maxAddr=MAX(accesAt+size, maxAddr); 
     }
-    //if the current thread isn't the block's creator, the bloc is a
-    //shared block
-    if(b->creatorId!=tid){
-        //if we have changed the status of the block, then we have to 
-        //display the block on next flush
-        showBlocksOnNextFlush=showBlocksOnNextFlush || !(b->sharedBlock);
-        b->sharedBlock=True;
-    }
     HI_Acces *last=(HI_Acces *)VG_(HT_lookup)(lastAcces, accesAt);
     if(last!=NULL){
         tl_assert(last->time + mergeTimeThreshold >= time + lastFlush );
-        last->concurrentAcc=(tid!=last->tid)|| last->concurrentAcc;
+        int mask=1<<tid;
+        last->tid_mask&=mask; //Add the tid as an accessor
+        b->tid_mask&=mask;
         last->numAcc[accesType]++;
         last->lastTime=time+lastFlush;
         last->size=mergeSize;
@@ -352,15 +398,16 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
         a->time=(time+lastFlush);
         a->lastTime=(time+lastFlush);
         a->accesAt=accesAt;
-        a->tid=tid;
-        a->concurrentAcc=False;
+        a->tid_mask=1<<tid;
         a->numAcc[accesType]=1;
         a->numAcc[(accesType+1)%2]=0;
         a->size=size;
         append(b->acces, (void *)a);
         if(b->ignored)
+        {
             showBlocksOnNextFlush=True;
-        b->ignored=False; // We don't ignore the bloc anymore
+            b->ignored=False; // We don't ignore the bloc anymore
+        }
         time++;
         numAcc++;
         removeOldAccess();
