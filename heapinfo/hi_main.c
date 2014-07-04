@@ -136,7 +136,6 @@ static void hi_print_debug_usage(void)
 static void fwrite(int fd, char * buff)
 {
     SizeT size=VG_(strlen)(buff), ws;
-    //VG_(printf)("write %lu o\n", size);
     if((ws=VG_(write)(fd, buff, size))!=size){
         VG_(snprintf)(errBUFF,600,"error while writing %s, only %lu bytes writed successful", 
                 BUFF, ws); 
@@ -201,8 +200,9 @@ static void display(HI_Acces *a, int index)
         //Access adress size start end type value
         char buffer[35];
         print_binary_reprensentation(a->tid_mask, buffer);
-        VG_(printf)("Access %lx %llu %llu %llu %s %llu %s\n", a->accesAt, a->size, 
-                a->time, a->lastTime, (ratio==0?"W":ratio==100?"R":"RW"), 
+        VG_(printf)("Access %llu %llu %lx %llu %s %llu %s\n", a->time, 
+                a->lastTime, a->accesAt, a->size,  
+                (ratio==0?"W":ratio==100?"R":"RW"), 
                 ratio,buffer);
     }else{
         int r,g,b;
@@ -350,17 +350,17 @@ static void removeOldAccess(void)
     if(mergeTimeThreshold>0)
     {
         HI_Acces *last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
-        VG_(printf)("last acc  addr %lx\n", mergableAcc[oldestMergableAcc]);
+  //      VG_(printf)("last acc  addr %lx\n", mergableAcc[oldestMergableAcc]);
         while(last!=NULL && last->time+mergeTimeThreshold<time+lastFlush){
-            VG_(printf)("current time %llu, removed acces %lx at %llu, mergeTimeThreshold %d\n", time, last->accesAt, last->time, mergeTimeThreshold);
+          //  VG_(printf)("current time %llu, removed acces %lx at %llu, mergeTimeThreshold %d\n", time, last->accesAt, last->time, mergeTimeThreshold);
             tl_assert(VG_(HT_remove)(lastAcces,last->accesAt)!=NULL);
             oldestMergableAcc=(oldestMergableAcc+1)%mergeTimeThreshold;
             last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
         }
-        if(last==NULL)
-        {
-            VG_(printf)("no more margeable access oldest %d, next %d, mergeTimeThreshold %d\n", oldestMergableAcc, nextMergableAcc, mergeTimeThreshold);
-        }
+  //      if(last==NULL)
+  //      {
+  //          VG_(printf)("no more margeable access oldest %d, next %d, mergeTimeThreshold %d\n", oldestMergableAcc, nextMergableAcc, mergeTimeThreshold);
+  //      }
     }
 }
 
@@ -414,7 +414,7 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
         //add the access to the hash table 
         if(mergeTimeThreshold>0 && mergeSize > 0)
         {
-            VG_(printf)("Add acces \n");
+            //VG_(printf)("Add acces \n");
             VG_(HT_add_node)(lastAcces, a);
             tl_assert(VG_(HT_lookup)(lastAcces, a->accesAt)!=NULL);
             mergableAcc[nextMergableAcc]=a->accesAt;
@@ -939,7 +939,7 @@ static void hi_post_clo_init(void)
         VG_(tool_panic)("alloc fail");
     }
     oldestMergableAcc=0;
-    if(!VG_(strcmp)(mergeGranularity, "none") || VG_(strtoull10)(mergeGranularity,NULL)==0){
+    if(!VG_(strcmp)(mergeGranularity, "none") || mergeGranularity=='0'){
         int i;
         for(i=0;i<8*sizeof(Addr);i++){
             MERGE_ADDR_MASK|=(~(Addr)0)<<i;
