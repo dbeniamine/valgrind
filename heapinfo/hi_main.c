@@ -381,8 +381,8 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
     if(last!=NULL){
         tl_assert(last->time + mergeTimeThreshold >= current_time );
         int mask=1<<tid;
-        last->tid_mask&=mask; //Add the tid as an accessor
-        b->tid_mask&=mask;
+        last->tid_mask|=mask; //Add the tid as an accessor
+        b->tid_mask|=mask;
         last->numAcc[accesType]++;
         last->lastTime=current_time;
         last->size=mergeSize;
