@@ -20,6 +20,7 @@
 
 #define MAX(a,b) (((a)>(b))? (a):(b))
 #define MIN(a,b) (((a)<(b))? (a):(b))
+#define current_time (time+lastFlush)
 
 #define READ 0
 #define WRITE 1
@@ -297,9 +298,8 @@ static void flush(void)
             VG_(free)(curAcc);
         }
     }
-    //empty the hashtable
-    //oldestMergableAcc=0;
-    //nextMergableAcc=0;
+    oldestMergableAcc=0;
+    nextMergableAcc=0;
     lastFlush+=time;
     time=0;
     numAcc=0;
@@ -350,17 +350,17 @@ static void removeOldAccess(void)
     if(mergeTimeThreshold>0)
     {
         HI_Acces *last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
-  //      VG_(printf)("last acc  addr %lx\n", mergableAcc[oldestMergableAcc]);
-        while(last!=NULL && last->time+mergeTimeThreshold<time+lastFlush){
-          //  VG_(printf)("current time %llu, removed acces %lx at %llu, mergeTimeThreshold %d\n", time, last->accesAt, last->time, mergeTimeThreshold);
-            tl_assert(VG_(HT_remove)(lastAcces,last->accesAt)!=NULL);
+        //      VG_(printf)("last acc  addr %lx\n", mergableAcc[oldestMergableAcc]);
+        while(last!=NULL && last->time+mergeTimeThreshold<current_time){
+            //  VG_(printf)("current time %llu, removed acces %lx at %llu, mergeTimeThreshold %d\n", time, last->accesAt, last->time, mergeTimeThreshold);
+            VG_(HT_remove)(lastAcces,last->accesAt);
             oldestMergableAcc=(oldestMergableAcc+1)%mergeTimeThreshold;
             last=VG_(HT_lookup)(lastAcces,mergableAcc[oldestMergableAcc]);
         }
-  //      if(last==NULL)
-  //      {
-  //          VG_(printf)("no more margeable access oldest %d, next %d, mergeTimeThreshold %d\n", oldestMergableAcc, nextMergableAcc, mergeTimeThreshold);
-  //      }
+        //      if(last==NULL)
+        //      {
+        //          VG_(printf)("no more margeable access oldest %d, next %d, mergeTimeThreshold %d\n", oldestMergableAcc, nextMergableAcc, mergeTimeThreshold);
+        //      }
     }
 }
 
@@ -379,15 +379,13 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
     }
     HI_Acces *last=(HI_Acces *)VG_(HT_lookup)(lastAcces, accesAt);
     if(last!=NULL){
-        tl_assert(last->time + mergeTimeThreshold >= time + lastFlush );
+        tl_assert(last->time + mergeTimeThreshold >= current_time );
         int mask=1<<tid;
         last->tid_mask&=mask; //Add the tid as an accessor
         b->tid_mask&=mask;
         last->numAcc[accesType]++;
-        last->lastTime=time+lastFlush;
+        last->lastTime=current_time;
         last->size=mergeSize;
-        time++;
-        removeOldAccess();
     }else{
         //Allocation of meta data
         HI_Acces *a=(HI_Acces *)VG_(malloc)("hi.addAccess", sizeof(struct HI_ACC));
@@ -395,8 +393,8 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
             VG_(tool_panic)("Allocation error");
         }
         //write the meta data
-        a->time=(time+lastFlush);
-        a->lastTime=(time+lastFlush);
+        a->time=current_time;
+        a->lastTime=current_time;
         a->accesAt=accesAt;
         a->tid_mask=1<<tid;
         a->numAcc[accesType]=1;
@@ -408,19 +406,19 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
             showBlocksOnNextFlush=True;
             b->ignored=False; // We don't ignore the bloc anymore
         }
-        time++;
         numAcc++;
-        removeOldAccess();
         //add the access to the hash table 
         if(mergeTimeThreshold>0 && mergeSize > 0)
         {
             //VG_(printf)("Add acces \n");
             VG_(HT_add_node)(lastAcces, a);
-            tl_assert(VG_(HT_lookup)(lastAcces, a->accesAt)!=NULL);
+            //tl_assert(VG_(HT_lookup)(lastAcces, a->accesAt)!=NULL);
             mergableAcc[nextMergableAcc]=a->accesAt;
             nextMergableAcc=(nextMergableAcc+1)%mergeTimeThreshold;
         }
     }
+    time++;
+    removeOldAccess();
     //remove old access which are not mergeable anymore
 
     if(numAcc==timeToFlush){
@@ -939,6 +937,7 @@ static void hi_post_clo_init(void)
         VG_(tool_panic)("alloc fail");
     }
     oldestMergableAcc=0;
+    nextMergableAcc=0;
     if(!VG_(strcmp)(mergeGranularity, "none") || mergeGranularity=='0'){
         int i;
         for(i=0;i<8*sizeof(Addr);i++){
@@ -1014,7 +1013,7 @@ static void hi_fini(Int exit_status)
 
 
 
-        VG_(snprintf)(BUFF,500,"x<-c(0,%llu)\n", time+lastFlush);
+        VG_(snprintf)(BUFF,500,"x<-c(0,%llu)\n", current_time);
         fwrite(plotFile, BUFF);
         VG_(snprintf)(BUFF,500,"y<-c(0x%lx,0x%lx)\n", minAddr, maxAddr);
         fwrite(plotFile, BUFF);
