@@ -13,6 +13,7 @@
 #include "pub_tool_tooliface.h"
 #include "pub_tool_wordfm.h"
 #include "pub_tool_hashtable.h"
+#include "pub_tool_threadstate.h"
 
 #include "hi_list.h"
 #include "hi_array.h"
@@ -138,8 +139,8 @@ static void fwrite(int fd, char * buff)
 {
     SizeT size=VG_(strlen)(buff), ws;
     if((ws=VG_(write)(fd, buff, size))!=size){
-        VG_(snprintf)(errBUFF,600,"error while writing %s, only %lu bytes writed successful", 
-                BUFF, ws); 
+        VG_(snprintf)(errBUFF,600,"error while writing %s, only %lu bytes writed successful",
+                BUFF, ws);
         VG_(tool_panic)(errBUFF);
     }
 }
@@ -147,7 +148,7 @@ void print_binary_reprensentation(unsigned int mask, char buffer[])
 {
     buffer[0]='0';
     buffer[1]='b';
-    unsigned int size=8*sizeof(unsigned int)-1, max=1<<size, cur=1;
+    unsigned int size=8*sizeof(unsigned int)-1, cur=1;
     unsigned int first=2, last=size+first, pos=last;
     //Write binary representation
     while(pos>=first)
@@ -201,9 +202,9 @@ static void display(HI_Acces *a, int index)
         //Access adress size start end type value
         char buffer[35];
         print_binary_reprensentation(a->tid_mask, buffer);
-        VG_(printf)("Access %llu %llu %lx %llu %s %llu %s\n", a->time, 
-                a->lastTime, a->accesAt, a->size,  
-                (ratio==0?"W":ratio==100?"R":"RW"), 
+        VG_(printf)("Access %llu %llu %lx %llu %s %llu %s\n", a->time,
+                a->lastTime, a->accesAt, a->size,
+                (ratio==0?"W":ratio==100?"R":"RW"),
                 ratio,buffer);
     }else{
         int r,g,b;
@@ -220,8 +221,8 @@ static void display(HI_Acces *a, int index)
             b=(int)(255*ratio/100);
         }
         //R instruction
-        VG_(snprintf)(BUFF, 500, 
-                "rect(%llu, %lu, %llu,%llu, col='#%02x%02x%02x', border='#%02x%02x%02x')\n", 
+        VG_(snprintf)(BUFF, 500,
+                "rect(%llu, %lu, %llu,%llu, col='#%02x%02x%02x', border='#%02x%02x%02x')\n",
                 a->time, a->accesAt, a->lastTime, a->accesAt+a->size, r,g,b,r,g,b);
         fwrite(plotFileTemp, BUFF);
     }
@@ -241,14 +242,14 @@ static void flush(void)
                 curb=(HI_Block*)elementAt(allocTable,i);
                 if(!curb->ignored ){
                     if(nolegend){
-                        VG_(snprintf)(BUFF,500, 
+                        VG_(snprintf)(BUFF,500,
                                 "legend(\"topright\",legend=c(\"shared data structure bounds\", \"private data structure bounds\"), col=c(\"black\", \"yellow\"))\n");
                         fwrite(plotFileTemp, BUFF);
                         nolegend=False;
                     }
                     if(curb->name!=NULL)
                     {
-                        VG_(snprintf)(BUFF,500, "mtext(\"%s\",side=2, at=%lu)\n", 
+                        VG_(snprintf)(BUFF,500, "mtext(\"%s\",side=2, at=%lu)\n",
                                 curb->name, curb->start+curb->size/2);
                         fwrite(plotFileTemp, BUFF);
                     }
@@ -262,12 +263,12 @@ static void flush(void)
             if(curb->ignored)
                 continue;
             //begin line
-            VG_(snprintf)(BUFF,500, "abline(h=0x%lx,untf=FALSE,col='%s')\n", 
-                    curb->start, shared(curb->tid_mask)?"black":"yellow"); 
+            VG_(snprintf)(BUFF,500, "abline(h=0x%lx,untf=FALSE,col='%s')\n",
+                    curb->start, shared(curb->tid_mask)?"black":"yellow");
             fwrite(plotFileTemp, BUFF);
-            VG_(snprintf)(BUFF,500, "abline(h=0x%lx,untf=FALSE,col='%s')\n", 
-                    curb->start+curb->size, 
-                    shared(curb->tid_mask)?"black":"yellow"); 
+            VG_(snprintf)(BUFF,500, "abline(h=0x%lx,untf=FALSE,col='%s')\n",
+                    curb->start+curb->size,
+                    shared(curb->tid_mask)?"black":"yellow");
             fwrite(plotFileTemp, BUFF);
         }
     }
@@ -286,8 +287,8 @@ static void flush(void)
             print_binary_reprensentation(curb->tid_mask, buffer);
             //Normal block display
             //Struct name adress size users
-            VG_(printf)("Struct %s %lx %lu %s\n", 
-                    (curb->name==NULL?"Unnamed":curb->name),curb->start, 
+            VG_(printf)("Struct %s %lx %lu %s\n",
+                    (curb->name==NULL?"Unnamed":curb->name),curb->start,
                     curb->size,  buffer);
         }
         while(!isEmpty(curb->acces)){
@@ -308,8 +309,9 @@ static void flush(void)
     showBlocksOnNextFlush=False;
 }
 
-static Bool addBlock(ThreadId tid, Addr start, SizeT size)
+static Bool addBlock(Addr start, SizeT size)
 {
+    ThreadId tid=VG_(get_running_tid)();
     HI_Block *temp=VG_(malloc)("hi.addBlock.1",sizeof(struct HI_BLK));
     temp->start=start;
     temp->size=size;
@@ -364,8 +366,9 @@ static void removeOldAccess(void)
     }
 }
 
-static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int accesType)
+static void addAcces(HI_Block *b, Addr accesAt, SizeT size, int accesType)
 {
+    ThreadId tid=VG_(get_running_tid)();
     tl_assert(!clo_ignore_events);
     accesAt&=MERGE_ADDR_MASK;
     if(clo_R_output){
@@ -375,7 +378,7 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
         }else{
             minAddr=MIN(accesAt, minAddr);
         }
-        maxAddr=MAX(accesAt+size, maxAddr); 
+        maxAddr=MAX(accesAt+size, maxAddr);
     }
     HI_Acces *last=(HI_Acces *)VG_(HT_lookup)(lastAcces, accesAt);
     if(last!=NULL){
@@ -407,7 +410,7 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
             b->ignored=False; // We don't ignore the bloc anymore
         }
         numAcc++;
-        //add the access to the hash table 
+        //add the access to the hash table
         if(mergeTimeThreshold>0 && mergeSize > 0)
         {
             //VG_(printf)("Add acces \n");
@@ -429,7 +432,7 @@ static void addAcces(HI_Block *b, Addr accesAt, SizeT size, ThreadId tid, int ac
 //--- Malloc replacement                                   ---//
 //------------------------------------------------------------//
     static
-void* new_block ( ThreadId tid, void* p, SizeT req_szB, SizeT req_alignB,
+void* new_block ( void* p, SizeT req_szB, SizeT req_alignB,
         Bool is_zeroed )
 {
     tl_assert(p == NULL); // don't handle custom allocators right now
@@ -441,11 +444,11 @@ void* new_block ( ThreadId tid, void* p, SizeT req_szB, SizeT req_alignB,
         VG_(printf)("malloc fail : %lu %p\n", req_szB, p);
         return NULL;
     }
-    if (is_zeroed){ 
+    if (is_zeroed){
         VG_(memset)(p, 0, req_szB);
     }
-    //Generate the meta data 
-    if(addBlock(tid, (Addr)p, req_szB) ){
+    //Generate the meta data
+    if(addBlock((Addr)p, req_szB) ){
         //a block has been added so we have to show it on next flush
         if(!clo_ignore_events)
             showBlocksOnNextFlush=True;
@@ -464,7 +467,7 @@ void* new_block ( ThreadId tid, void* p, SizeT req_szB, SizeT req_alignB,
 static void deleteBlock(void *p)
 {
     HI_Block *b;
-    //We flush the data to keep the coherency 
+    //We flush the data to keep the coherency
     flush();
     //then we find the block and delete it
     b=(HI_Block*)delElement(allocTable, p);
@@ -474,8 +477,9 @@ static void deleteBlock(void *p)
     }
 }
 
-static void* renew_block ( ThreadId tid, void* p_old, SizeT new_req_szB )
+static void* renew_block ( void* p_old, SizeT new_req_szB )
 {
+    ThreadId tid=VG_(get_running_tid)();
     int index=getIndex(allocTable,p_old);
     void* p_new = NULL;
     //update meta data
@@ -507,6 +511,7 @@ static void* renew_block ( ThreadId tid, void* p_old, SizeT new_req_szB )
     tl_assert(delElementAt(allocTable,index)!=NULL);
     b->start=(Addr)p_new;
     b->size=new_req_szB;
+    b->tid_mask|=1<<tid;
     if(!addElement(allocTable,b)){
         VG_(tool_panic)("renew_block : error adding element");
     }
@@ -518,17 +523,17 @@ static void* renew_block ( ThreadId tid, void* p_old, SizeT new_req_szB )
 
 static void* hi_malloc ( ThreadId tid, SizeT szB )
 {
-    return new_block( tid, NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
+    return new_block(  NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
 }
 
 static void* hi___builtin_new ( ThreadId tid, SizeT szB )
 {
-    return new_block( tid, NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
+    return new_block( NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
 }
 
 static void* hi___builtin_vec_new ( ThreadId tid, SizeT szB )
 {
-    return new_block( tid, NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
+    return new_block( NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
 }
 
 static void* hi_calloc ( ThreadId tid, SizeT m, SizeT szB )
@@ -537,12 +542,12 @@ static void* hi_calloc ( ThreadId tid, SizeT m, SizeT szB )
     //void *p=VG_(cli_malloc)(VG_(clo_alignment),m*szB);
     //VG_(memset)(p, 0, m*szB);
     //return p;
-    return new_block( tid, NULL, m*szB, VG_(clo_alignment), /*is_zeroed*/True );
+    return new_block( NULL, m*szB, VG_(clo_alignment), /*is_zeroed*/True );
 }
 
 static void *hi_memalign ( ThreadId tid, SizeT alignB, SizeT szB )
 {
-    return new_block( tid, NULL, szB, alignB, False );
+    return new_block( NULL, szB, alignB, False );
 }
 
 static void hi_free ( ThreadId tid __attribute__((unused)), void* p )
@@ -572,13 +577,13 @@ static void* hi_realloc ( ThreadId tid, void* p_old, SizeT new_szB )
         hi_free(tid, p_old);
         return NULL;
     }
-    return renew_block(tid, p_old, new_szB);
+    return renew_block(p_old, new_szB);
 }
 
 static SizeT hi_malloc_usable_size ( ThreadId tid, void* p )
-{                                                            
+{
     tl_assert(0);
-}                                                            
+}
 
 
 //------------------------------------------------------------//
@@ -592,7 +597,7 @@ static void hi_handle_write(Addr addr, SizeT size, ThreadId tid)
         return;
     HI_Block *b;
     if((b=(HI_Block*)lookup(allocTable,(void*)addr))){
-        addAcces(b,addr,size,tid, WRITE);
+        addAcces(b,addr,size, WRITE);
     }
 }
 
@@ -602,7 +607,7 @@ static void hi_handle_read(Addr addr, SizeT size, ThreadId tid)
         return;
     HI_Block *b;
     if((b=(HI_Block*)lookup(allocTable,(void*)addr))){
-        addAcces(b,addr,size,tid, READ);
+        addAcces(b,addr,size, READ);
     }
 }
     static
@@ -610,8 +615,9 @@ void hi_handle_noninsn_read ( CorePart part, ThreadId tid, Char* s,
         Addr base, SizeT size )
 {
     switch (part) {
+        //TODO : remove that
         case Vg_CoreSysCall:
-            hi_handle_read(base, size, tid);
+            hi_handle_read(base, size, 0);
             break;
         case Vg_CoreSysCallArgInMem:
             break;
@@ -629,7 +635,7 @@ void hi_handle_noninsn_write ( CorePart part, ThreadId tid,
 {
     switch (part) {
         case Vg_CoreSysCall:
-            hi_handle_write(base, size, tid);
+            hi_handle_write(base, size, 0);
             break;
         case Vg_CoreSignal:
             break;
@@ -659,7 +665,7 @@ static Bool hi_handle_client_request(ThreadId tid, UWord*arg, UWord* ret)
             //if the block exist, we delete all entries without displaying it
 
             while(!isEmpty(b->acces)){
-                VG_(free)(removeFirst(b->acces));  
+                VG_(free)(removeFirst(b->acces));
             }
             removeList(b->acces);
 
@@ -672,13 +678,12 @@ static Bool hi_handle_client_request(ThreadId tid, UWord*arg, UWord* ret)
         case VG_USERREQ__RESIZE_STRUCT :
             b=(HI_Block*)lookup(allocTable, (void*)arg[1]);
             if(b){
-                VG_(printf)("arg2 %lu\n", *((SizeT*)arg[2]));
                 b->size=*((SizeT *)arg[2]);
                 return True;
             }
             return False;
             break;
-        default : 
+        default :
             return False;
     }
     return True;
@@ -695,7 +700,7 @@ static Bool hi_handle_client_request(ThreadId tid, UWord*arg, UWord* ret)
 #define assign(_t, _e)           IRStmt_WrTmp((_t), (_e))
     static
 void addMemEvent(IRSB* sbOut, Bool isWrite, Int szB, IRExpr* addr,
-        Int goff_sp, ThreadId tid)
+        Int goff_sp)
 {
 
     IRType   tyAddr   = Ity_INVALID;
@@ -718,7 +723,7 @@ void addMemEvent(IRSB* sbOut, Bool isWrite, Int szB, IRExpr* addr,
         hAddr = &hi_handle_read;
     }
 
-    argv = mkIRExprVec_3( addr, mkIRExpr_HWord(szB), mkIRExpr_HWord(tid) );
+    argv = mkIRExprVec_3( addr, mkIRExpr_HWord(szB), mkIRExpr_HWord(0) );
 
     /* Add the helper. */
     tl_assert(hName);
@@ -748,7 +753,7 @@ void addMemEvent(IRSB* sbOut, Bool isWrite, Int szB, IRExpr* addr,
     addStmtToIRSB(
             sbOut,
             assign(diff,
-                tyAddr == Ity_I32 
+                tyAddr == Ity_I32
                 ? binop(Iop_Sub32, addr, mkexpr(sp_minus_rz))
                 : binop(Iop_Sub64, addr, mkexpr(sp_minus_rz)))
             );
@@ -757,7 +762,7 @@ void addMemEvent(IRSB* sbOut, Bool isWrite, Int szB, IRExpr* addr,
     addStmtToIRSB(
             sbOut,
             assign(guard,
-                tyAddr == Ity_I32 
+                tyAddr == Ity_I32
                 ? binop(Iop_CmpLT32U, mkU32(THRESH), mkexpr(diff))
                 : binop(Iop_CmpLT64U, mkU64(THRESH), mkexpr(diff)))
             );
@@ -825,7 +830,7 @@ IRSB* hi_instrument ( VgCallbackClosure* closure,
                                         // that's not interesting.
                                         addMemEvent( sbOut, False/*!isWrite*/,
                                                 sizeofIRType(data->Iex.Load.ty),
-                                                aexpr, goff_sp , closure->tid);
+                                                aexpr, goff_sp );
                                     }
                                     break;
                                 }
@@ -833,9 +838,9 @@ IRSB* hi_instrument ( VgCallbackClosure* closure,
                 case Ist_Store: {
                                     IRExpr* data  = st->Ist.Store.data;
                                     IRExpr* aexpr = st->Ist.Store.addr;
-                                    addMemEvent( sbOut, True/*isWrite*/, 
+                                    addMemEvent( sbOut, True/*isWrite*/,
                                             sizeofIRType(typeOfIRExpr(tyenv, data)),
-                                            aexpr, goff_sp , closure->tid);
+                                            aexpr, goff_sp );
                                     break;
                                 }
 
@@ -854,12 +859,12 @@ IRSB* hi_instrument ( VgCallbackClosure* closure,
                                         if (d->mFx == Ifx_Read || d->mFx == Ifx_Modify)
                                         {
                                             addMemEvent( sbOut, False/*!isWrite*/,
-                                                    dataSize, d->mAddr, goff_sp , closure->tid);
+                                                    dataSize, d->mAddr, goff_sp );
                                         }
                                         if (d->mFx == Ifx_Write || d->mFx == Ifx_Modify)
                                         {
                                             addMemEvent( sbOut, True/*isWrite*/,
-                                                    dataSize, d->mAddr, goff_sp , closure->tid);
+                                                    dataSize, d->mAddr, goff_sp );
                                         }
                                     } else {
                                         tl_assert(d->mAddr == NULL);
@@ -882,9 +887,9 @@ IRSB* hi_instrument ( VgCallbackClosure* closure,
                                   if (cas->dataHi != NULL)
                                       dataSize *= 2; /* since it's a doubleword-CAS */
                                   addMemEvent( sbOut, False/*!isWrite*/,
-                                          dataSize, cas->addr, goff_sp , closure->tid);
+                                          dataSize, cas->addr, goff_sp );
                                   addMemEvent( sbOut, True/*isWrite*/,
-                                          dataSize, cas->addr, goff_sp , closure->tid);
+                                          dataSize, cas->addr, goff_sp );
                                   break;
                               }
 
@@ -896,13 +901,13 @@ IRSB* hi_instrument ( VgCallbackClosure* closure,
 
                                        addMemEvent( sbOut, False/*!isWrite*/,
                                                sizeofIRType(dataTy),
-                                               st->Ist.LLSC.addr, goff_sp , closure->tid);
+                                               st->Ist.LLSC.addr, goff_sp );
                                    } else {
                                        /* SC */
                                        dataTy = typeOfIRExpr(tyenv, st->Ist.LLSC.storedata);
                                        addMemEvent( sbOut, True/*isWrite*/,
                                                sizeofIRType(dataTy),
-                                               st->Ist.LLSC.addr, goff_sp , closure->tid);
+                                               st->Ist.LLSC.addr, goff_sp );
                                    }
                                    break;
                                }
@@ -973,7 +978,7 @@ static void hi_post_clo_init(void)
         //The lsize Least Signifiant Bits are the offset, we set all the
         //others
         for(i=lsize; i<8*sizeof(Addr); i++){
-            MERGE_ADDR_MASK|=(~((Addr)0)<<i); 
+            MERGE_ADDR_MASK|=(~((Addr)0)<<i);
         }
     }
     //openning R's file if necessary
@@ -1063,8 +1068,9 @@ static void hi_pre_clo_init(void)
             hi_malloc_usable_size,
             0);
     //handle reads and writes
-    VG_(track_pre_mem_read)        ( hi_handle_noninsn_read );
-    VG_(track_post_mem_write)      ( hi_handle_noninsn_write );
+    //Obsolete don't track cache access ...
+    //VG_(track_pre_mem_read)        ( hi_handle_noninsn_read );
+    //VG_(track_post_mem_write)      ( hi_handle_noninsn_write );
     //Client requests
     VG_(needs_client_requests)(hi_handle_client_request);
     lastAcces=VG_(HT_construct)("heap info hashtable");

@@ -31,7 +31,7 @@ extern Bool addElement(hi_array*, void *);
  * or return the element removed*/
 extern void *delElement(hi_array*,void* key);
 
-/*Delete the element at the index ind  
+/*Delete the element at the index ind
  * return NULL if there are no such element
  * or return the element removed*/
 extern void *delElementAt(hi_array *, int ind);
