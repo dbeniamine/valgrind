@@ -75,7 +75,7 @@ typedef struct HI_ACC
     ULong size;
     ULong time;
     ULong lastTime;
-    ThreadId tid_mask;
+    unsigned int tid_mask;
     ULong numAcc[2];
 }HI_Acces;
 
@@ -84,14 +84,22 @@ typedef struct HI_BLK
 {
     Addr start;
     SizeT size;
-    ThreadId tid_mask;
+    unsigned int tid_mask;
     Bool ignored;
     list acces;
     char* name;
 }HI_Block;
 
+//Usefull to have tid between 0->NThreads
+typedef struct HI_Thread
+{
+    struct _VgHashNode *next;
+    UWord vg_tid; //key
+    unsigned int hi_tid;
+}HI_Thread;
+
 hi_array *allocTable;
-static VgHashTable lastAcces;
+static VgHashTable lastAcces, Threads;
 static int oldestMergableAcc;
 static int nextMergableAcc;
 static Addr *mergableAcc;
@@ -131,8 +139,24 @@ static void hi_print_debug_usage(void)
 }
 
 //------------------------------------------------------------//
-//--- Block and lists management                           ---//
+//--- Tools (should be moved in an other file)             ---//
 //------------------------------------------------------------//
+
+//Get the local tid
+unsigned int get_local_tid()
+{
+    static unsigned int currenttid=0;
+    ThreadId tid=VG_(gettid)();
+    HI_Thread *th=VG_(HT_lookup)(Threads, tid);
+    if(!th)
+    {
+        th=(HI_Thread *)VG_(malloc)("hi.thread",sizeof(HI_Thread));
+        th->vg_tid=(UWord)tid;
+        th->hi_tid=currenttid++;
+        VG_(HT_add_node)(Threads, th);
+    }
+    return th->hi_tid;
+}
 
 //write the string in buff ended by '\0'
 static void fwrite(int fd, char * buff)
@@ -195,6 +219,9 @@ int shared(unsigned int mask)
     return nbAccessors > 1;
 }
 
+//------------------------------------------------------------//
+//--- Output trace                                         ---//
+//------------------------------------------------------------//
 static void display(HI_Acces *a, int index)
 {
     ULong ratio=(100*a->numAcc[READ]/(a->numAcc[READ]+a->numAcc[WRITE]));
@@ -309,9 +336,13 @@ static void flush(void)
     showBlocksOnNextFlush=False;
 }
 
+//------------------------------------------------------------//
+//--- Block and access management                          ---//
+//------------------------------------------------------------//
 static Bool addBlock(Addr start, SizeT size)
 {
-    ThreadId tid=VG_(get_running_tid)();
+//    ThreadId tid=VG_(get_running_tid)();
+    unsigned int tid=get_local_tid();
     HI_Block *temp=VG_(malloc)("hi.addBlock.1",sizeof(struct HI_BLK));
     temp->start=start;
     temp->size=size;
@@ -368,7 +399,7 @@ static void removeOldAccess(void)
 
 static void addAcces(HI_Block *b, Addr accesAt, SizeT size, int accesType)
 {
-    ThreadId tid=VG_(get_running_tid)();
+    unsigned int tid=get_local_tid();
     tl_assert(!clo_ignore_events);
     accesAt&=MERGE_ADDR_MASK;
     if(clo_R_output){
@@ -479,7 +510,7 @@ static void deleteBlock(void *p)
 
 static void* renew_block ( void* p_old, SizeT new_req_szB )
 {
-    ThreadId tid=VG_(get_running_tid)();
+    unsigned int tid=get_local_tid();
     int index=getIndex(allocTable,p_old);
     void* p_new = NULL;
     //update meta data
@@ -943,7 +974,7 @@ static void hi_post_clo_init(void)
     }
     oldestMergableAcc=0;
     nextMergableAcc=0;
-    if(!VG_(strcmp)(mergeGranularity, "none") || mergeGranularity=='0'){
+    if(!VG_(strcmp)(mergeGranularity, "none") || !VG_(strcmp)(mergeGranularity,"0")){
         int i;
         for(i=0;i<8*sizeof(Addr);i++){
             MERGE_ADDR_MASK|=(~(Addr)0)<<i;
@@ -1073,7 +1104,8 @@ static void hi_pre_clo_init(void)
     //VG_(track_post_mem_write)      ( hi_handle_noninsn_write );
     //Client requests
     VG_(needs_client_requests)(hi_handle_client_request);
-    lastAcces=VG_(HT_construct)("heap info hashtable");
+    lastAcces=VG_(HT_construct)("HeapInfo access");
+    Threads=VG_(HT_construct)("HeapInfo threads mapping");
 
 }
 
