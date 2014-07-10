@@ -344,7 +344,7 @@ static Bool addBlock(Addr start, SizeT size)
 //    ThreadId tid=VG_(get_running_tid)();
     unsigned int tid=get_local_tid();
     HI_Block *temp=VG_(malloc)("hi.addBlock.1",sizeof(struct HI_BLK));
-    temp->start=start;
+    temp->start=start&MERGE_ADDR_MASK;
     temp->size=size;
     temp->tid_mask=1<<tid;
     temp->name=NULL;
