@@ -143,7 +143,7 @@ static void hi_print_debug_usage(void)
 //------------------------------------------------------------//
 
 //Get the local tid
-unsigned int get_local_tid()
+static unsigned int get_local_tid(void)
 {
     static unsigned int currenttid=0;
     ThreadId tid=VG_(gettid)();
@@ -168,7 +168,7 @@ static void fwrite(int fd, char * buff)
         VG_(tool_panic)(errBUFF);
     }
 }
-void print_binary_reprensentation(unsigned int mask, char buffer[])
+static void print_binary_reprensentation(unsigned int mask, char buffer[])
 {
     buffer[0]='0';
     buffer[1]='b';
@@ -205,7 +205,7 @@ void print_binary_reprensentation(unsigned int mask, char buffer[])
     buffer[i]='\0';
 }
 
-int shared(unsigned int mask)
+static int shared(unsigned int mask)
 {
     unsigned int size=8*sizeof(unsigned int);
     unsigned int nbAccessors=0, cur=1, i=0;
@@ -229,10 +229,9 @@ static void display(HI_Acces *a, int index)
         //Access adress size start end type value
         char buffer[35];
         print_binary_reprensentation(a->tid_mask, buffer);
-        VG_(printf)("Access %llu %llu %lx %llu %s %llu %s\n", a->time,
-                a->lastTime, a->accesAt, a->size,
-                (ratio==0?"W":ratio==100?"R":"RW"),
-                ratio,buffer);
+        VG_(printf)("Access %llu %llu %lx %llu %s %llu %llu\n", a->time,
+                a->lastTime, a->accesAt, a->size, buffer, a->numAcc[READ],
+                a->numAcc[WRITE]);
     }else{
         int r,g,b;
         //define the color gradient
@@ -253,7 +252,6 @@ static void display(HI_Acces *a, int index)
                 a->time, a->accesAt, a->lastTime, a->accesAt+a->size, r,g,b,r,g,b);
         fwrite(plotFileTemp, BUFF);
     }
-
 }
 static void flush(void)
 {
@@ -469,23 +467,29 @@ void* new_block ( void* p, SizeT req_szB, SizeT req_alignB,
     tl_assert(p == NULL); // don't handle custom allocators right now
     if ((SSizeT)req_szB < 0) return NULL;
 
+    //Align the allocated size with the merge size
+    SizeT actualSZ=req_szB,rest;
+    if(mergeSize!=0 && (rest=req_szB%mergeSize)!=0)
+    {
+        actualSZ+=mergeSize-rest;
+    }
     // Allocate and zero if necessary
-    p = VG_(cli_malloc)( req_alignB, req_szB );
+    p = VG_(cli_malloc)( req_alignB, actualSZ );
     if (!p) {
         VG_(printf)("malloc fail : %lu %p\n", req_szB, p);
         return NULL;
     }
     if (is_zeroed){
-        VG_(memset)(p, 0, req_szB);
+        VG_(memset)(p, 0, actualSZ);
     }
     //Generate the meta data
-    if(addBlock((Addr)p, req_szB) ){
+    if(addBlock((Addr)p, actualSZ) ){
         //a block has been added so we have to show it on next flush
         if(!clo_ignore_events)
             showBlocksOnNextFlush=True;
         return p;
     }
-    VG_(printf)("addBlock fail : %lu %p\n", req_szB, p);
+    VG_(printf)("addBlock fail : %lu %p\n", actualSZ, p);
     //addBlock has fail
     if(p){
         //the first alloc has worked, we free the block
@@ -554,17 +558,17 @@ static void* renew_block ( void* p_old, SizeT new_req_szB )
 
 static void* hi_malloc ( ThreadId tid, SizeT szB )
 {
-    return new_block(  NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
+    return new_block(  NULL, szB, /*VG_(clo_alignment)*/mergeSize, /*is_zeroed*/False );
 }
 
 static void* hi___builtin_new ( ThreadId tid, SizeT szB )
 {
-    return new_block( NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
+    return new_block( NULL, szB, /*VG_(clo_alignment)*/mergeSize, /*is_zeroed*/False );
 }
 
 static void* hi___builtin_vec_new ( ThreadId tid, SizeT szB )
 {
-    return new_block( NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
+    return new_block( NULL, szB, /*VG_(clo_alignment)*/mergeSize, /*is_zeroed*/False );
 }
 
 static void* hi_calloc ( ThreadId tid, SizeT m, SizeT szB )
@@ -641,40 +645,40 @@ static void hi_handle_read(Addr addr, SizeT size, ThreadId tid)
         addAcces(b,addr,size, READ);
     }
 }
-    static
-void hi_handle_noninsn_read ( CorePart part, ThreadId tid, Char* s,
-        Addr base, SizeT size )
-{
-    switch (part) {
-        //TODO : remove that
-        case Vg_CoreSysCall:
-            hi_handle_read(base, size, 0);
-            break;
-        case Vg_CoreSysCallArgInMem:
-            break;
-        case Vg_CoreTranslate:
-            break;
-        default:
-            break;
-            //tl_assert(0);
-    }
-}
+    /* static */
+/* void hi_handle_noninsn_read ( CorePart part, ThreadId tid, Char* s, */
+/*         Addr base, SizeT size ) */
+/* { */
+/*     switch (part) { */
+/*         //TODO : remove that */
+/*         case Vg_CoreSysCall: */
+/*             hi_handle_read(base, size, 0); */
+/*             break; */
+/*         case Vg_CoreSysCallArgInMem: */
+/*             break; */
+/*         case Vg_CoreTranslate: */
+/*             break; */
+/*         default: */
+/*             break; */
+/*             //tl_assert(0); */
+/*     } */
+/* } */
 
-    static
-void hi_handle_noninsn_write ( CorePart part, ThreadId tid,
-        Addr base, SizeT size )
-{
-    switch (part) {
-        case Vg_CoreSysCall:
-            hi_handle_write(base, size, 0);
-            break;
-        case Vg_CoreSignal:
-            break;
-        default:
-            break;
-            //tl_assert(0);
-    }
-}
+/*     static */
+/* void hi_handle_noninsn_write ( CorePart part, ThreadId tid, */
+/*         Addr base, SizeT size ) */
+/* { */
+/*     switch (part) { */
+/*         case Vg_CoreSysCall: */
+/*             hi_handle_write(base, size, 0); */
+/*             break; */
+/*         case Vg_CoreSignal: */
+/*             break; */
+/*         default: */
+/*             break; */
+/*             //tl_assert(0); */
+/*     } */
+/* } */
 static Bool hi_handle_client_request(ThreadId tid, UWord*arg, UWord* ret)
 {
     HI_Block* b;
