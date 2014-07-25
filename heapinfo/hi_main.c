@@ -39,6 +39,8 @@ static Addr MERGE_ADDR_MASK=0;
 static Char *mergeGranularity="page";
 static ULong mergeSize=0;
 static int  mergeTimeThreshold=0;
+//Uname structure ids
+static int Struct_id=0;
 
 //Only analyse between start and stop markers
 static Bool clo_start_stop_marker = False;
@@ -88,6 +90,7 @@ typedef struct HI_BLK
     Bool ignored;
     list acces;
     char* name;
+    int sid;
 }HI_Block;
 
 //Usefull to have tid between 0->NThreads
@@ -312,9 +315,17 @@ static void flush(void)
             print_binary_reprensentation(curb->tid_mask, buffer);
             //Normal block display
             //Struct name adress size users
-            VG_(printf)("Struct %s %lx %lu %s\n",
-                    (curb->name==NULL?"Unnamed":curb->name),curb->start,
-                    curb->size,  buffer);
+            if(curb->name==NULL)
+            {
+                VG_(printf)("Struct %s_%d %lx %lu %s\n",
+                        "Unnamed",curb->sid,curb->start,
+                        curb->size,  buffer);
+            }
+            else
+            {
+                VG_(printf)("Struct %s %lx %lu %s\n", curb->name,curb->start,
+                        curb->size,  buffer);
+            }
         }
         while(!isEmpty(curb->acces)){
             curAcc=(HI_Acces *)removeFirst(curb->acces);
@@ -339,12 +350,14 @@ static void flush(void)
 //------------------------------------------------------------//
 static Bool addBlock(Addr start, SizeT size)
 {
-//    ThreadId tid=VG_(get_running_tid)();
+    //    ThreadId tid=VG_(get_running_tid)();
     unsigned int tid=get_local_tid();
     HI_Block *temp=VG_(malloc)("hi.addBlock.1",sizeof(struct HI_BLK));
     temp->start=start&MERGE_ADDR_MASK;
     temp->size=size;
     temp->tid_mask=1<<tid;
+    temp->sid=Struct_id;
+    Struct_id++;
     temp->name=NULL;
     temp->acces=newList();
     temp->ignored=clo_ignore_events;
@@ -645,7 +658,7 @@ static void hi_handle_read(Addr addr, SizeT size, ThreadId tid)
         addAcces(b,addr,size, READ);
     }
 }
-    /* static */
+/* static */
 /* void hi_handle_noninsn_read ( CorePart part, ThreadId tid, Char* s, */
 /*         Addr base, SizeT size ) */
 /* { */
