@@ -485,6 +485,7 @@ void* new_block ( void* p, SizeT req_szB, SizeT req_alignB,
     if(mergeSize!=0 && (rest=req_szB%mergeSize)!=0)
     {
         actualSZ+=mergeSize-rest;
+        req_alignB=mergeSize;
     }
     // Allocate and zero if necessary
     p = VG_(cli_malloc)( req_alignB, actualSZ );
@@ -540,8 +541,15 @@ static void* renew_block ( void* p_old, SizeT new_req_szB )
         return p_old;
 
     }
+    //Align the allocated size with the merge size
+    SizeT actualSZ=new_req_szB,rest, align=VG_(clo_alignment);
+    if(mergeSize!=0 && (rest=new_req_szB%mergeSize)!=0)
+    {
+        actualSZ+=mergeSize-rest;
+        align=mergeSize;
+    }
     // New size is bigger;  make new block, copy shared contents, free old.
-    p_new = VG_(cli_malloc)(VG_(clo_alignment), new_req_szB);
+    p_new = VG_(cli_malloc)(align, actualSZ);
     if (!p_new) {
         // Nb: if realloc fails, NULL is returned but the old block is not
         // touched.  What an awful function.
@@ -571,17 +579,17 @@ static void* renew_block ( void* p_old, SizeT new_req_szB )
 
 static void* hi_malloc ( ThreadId tid, SizeT szB )
 {
-    return new_block(  NULL, szB, /*VG_(clo_alignment)*/mergeSize, /*is_zeroed*/False );
+    return new_block(  NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
 }
 
 static void* hi___builtin_new ( ThreadId tid, SizeT szB )
 {
-    return new_block( NULL, szB, /*VG_(clo_alignment)*/mergeSize, /*is_zeroed*/False );
+    return new_block( NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
 }
 
 static void* hi___builtin_vec_new ( ThreadId tid, SizeT szB )
 {
-    return new_block( NULL, szB, /*VG_(clo_alignment)*/mergeSize, /*is_zeroed*/False );
+    return new_block( NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
 }
 
 static void* hi_calloc ( ThreadId tid, SizeT m, SizeT szB )
